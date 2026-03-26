@@ -1,0 +1,20 @@
+{
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/generate", "destination": "/api/generate" },
+    { "source": "/api/refine", "destination": "/api/refine" },
+    { "source": "/api/random-resolutions", "destination": "/api/random-resolutions" },
+    { "source": "/api/speech-structure", "destination": "/api/speech-structure" },
+    { "source": "/api/casual", "destination": "/api/casual" },
+    { "source": "/api/adjudicate", "destination": "/api/adjudicate" },
+    { "source": "/api/speech-feedback", "destination": "/api/speech-feedback" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60
+    }
+  }
+}
