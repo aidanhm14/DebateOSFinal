@@ -75,7 +75,7 @@ export default async function handler(req, res) {
   try {
     const anthropic = getClient();
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 3000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Generate 6 random debate resolutions. Mix difficulties and styles. Every motion must pass your quality checks: both sides genuinely winnable, rewards deep analysis, has a non-obvious angle.${topicStr}` }]

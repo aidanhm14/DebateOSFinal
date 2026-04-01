@@ -63,7 +63,7 @@ export default async function handler(req, res) {
   try {
     const anthropic = getClient();
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Map the round structure for this APDA motion from the perspective of ${side}:\n\n"${motion}"\n\nBe specific to THIS motion. Name exact arguments, frameworks, examples, and strategic moves. Do not give generic speech-role advice.` }]

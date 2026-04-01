@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   try {
     const anthropic = getClient();
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       system: `You are an expert APDA debate coach who has coached teams that break at nationals. You give immediate, specific, actionable feedback on individual speeches. You do not give generic advice. Every piece of feedback references specific content from the speech notes.
 

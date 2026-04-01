@@ -73,7 +73,7 @@ export default async function handler(req, res) {
   try {
     const anthropic = getClient();
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Generate a casual debate brief for both sides of this topic:\n\n"${topic}"${context}\n\nIMPORTANT: Match the vibe and setting exactly. Every talking point should sound like something a real person would actually say in this specific setting. If the vibe is comedic, be genuinely funny. If heated, be genuinely provocative. If intellectual, cite real ideas.` }]
