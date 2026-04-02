@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { supabase } from './supabase.js'
+import MindMap from './MindMap'
 
 const FORMATS = ['APDA', 'BP', 'LD', 'Policy']
 const SIDES = ['Government', 'Opposition']
@@ -211,6 +213,8 @@ export default function App() {
   const [caseBackground, setCaseBackground] = useState('')
   const [format, setFormat] = useState('APDA')
   const [side, setSide] = useState('Government')
+  const [complexity, setComplexity] = useState(3) // 1-5 scale
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('debateos-theme') || 'dark' } catch { return 'dark' } })
 
   // Case Generator state
   const [caseResult, setCaseResult] = useState(null)
@@ -258,29 +262,203 @@ export default function App() {
 
   const [error, setError] = useState(null)
 
+  // ─── AUTH STATE ─────────────────────────────────────────────────────────
+  const [authMode, setAuthMode] = useState(localStorage.getItem('debateos_auth_mode') || 'none') // 'none', 'apikey', 'user'
+  const [apiKey, setApiKey] = useState(localStorage.getItem('debateos_api_key') || '')
+  const [user, setUser] = useState(null)
+  const [session, setSession] = useState(null)
+  const [userProfile, setUserProfile] = useState(null)
+  const [authView, setAuthView] = useState(null) // null, 'signin', 'signup'
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState(null)
+  // Admin state
+  const [adminToken, setAdminToken] = useState(sessionStorage.getItem('debateos_admin') || '')
+  const [adminKeys, setAdminKeys] = useState([])
+  const [adminNewTeam, setAdminNewTeam] = useState('')
+  const [adminNewEmail, setAdminNewEmail] = useState('')
+  const [adminNewLimit, setAdminNewLimit] = useState(100)
+
+  // Get auth token for API calls
+  function getAuthToken() {
+    if (apiKey && apiKey.startsWith('dbt_')) return apiKey
+    if (apiKey && apiKey.startsWith('sk-ant-')) return apiKey
+    if (session?.access_token) return session.access_token
+    return null
+  }
+  const isAnthropicKey = apiKey && apiKey.startsWith('sk-ant-')
+
+  const isAuthenticated = !!getAuthToken()
+
+  // Supabase auth listener
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s)
+      setUser(s?.user || null)
+      if (s) { setAuthMode('user'); localStorage.setItem('debateos_auth_mode', 'user') }
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s)
+      setUser(s?.user || null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Fetch user profile when session changes
+  useEffect(() => {
+    if (!session?.access_token) { setUserProfile(null); return }
+    fetch('/api/admin/usage?limit=0', { headers: { 'Authorization': `Bearer ${session.access_token}` } })
+      .catch(() => {}) // silently fail — profile is created by middleware on first API call
+  }, [session])
+
+  async function signIn() {
+    if (!supabase) return setAuthError('Auth not configured')
+    setAuthLoading(true); setAuthError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
+    if (error) setAuthError(error.message)
+    else { setAuthView(null); setAuthEmail(''); setAuthPassword('') }
+    setAuthLoading(false)
+  }
+
+  async function signUp() {
+    if (!supabase) return setAuthError('Auth not configured')
+    setAuthLoading(true); setAuthError(null)
+    const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword })
+    if (error) setAuthError(error.message)
+    else { setAuthError(null); setAuthView(null); setAuthEmail(''); setAuthPassword(''); alert('Check your email to confirm your account!') }
+    setAuthLoading(false)
+  }
+
+  async function signOut() {
+    if (supabase) await supabase.auth.signOut()
+    setUser(null); setSession(null); setAuthMode('none')
+    localStorage.removeItem('debateos_auth_mode')
+  }
+
+  function saveApiKey() {
+    if (apiKey.trim()) {
+      localStorage.setItem('debateos_api_key', apiKey.trim())
+      localStorage.setItem('debateos_auth_mode', 'apikey')
+      setAuthMode('apikey')
+    }
+  }
+
+  function clearApiKey() {
+    setApiKey(''); localStorage.removeItem('debateos_api_key')
+    setAuthMode('none'); localStorage.removeItem('debateos_auth_mode')
+  }
+
+  async function handleUpgrade() {
+    const token = getAuthToken()
+    if (!token) return setError('Sign in first to upgrade')
+    try {
+      const res = await fetch('/api/stripe/create-checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.url) window.location.href = data.url
+      else setError(data.error || 'Failed to start checkout')
+    } catch (e) { setError(e.message) }
+  }
+
+  async function handleManageBilling() {
+    const token = getAuthToken()
+    if (!token) return
+    try {
+      const res = await fetch('/api/stripe/portal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.url) window.location.href = data.url
+    } catch (e) { setError(e.message) }
+  }
+
+  // Admin functions
+  async function fetchAdminKeys() {
+    const res = await fetch('/api/admin/keys', { headers: { 'Authorization': `Bearer ${adminToken}` } })
+    const data = await res.json()
+    if (data.keys) setAdminKeys(data.keys)
+  }
+
+  async function createAdminKey() {
+    if (!adminNewTeam || !adminNewEmail) return
+    await fetch('/api/admin/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ teamName: adminNewTeam, coachEmail: adminNewEmail, dailyLimit: adminNewLimit })
+    })
+    setAdminNewTeam(''); setAdminNewEmail(''); setAdminNewLimit(100)
+    fetchAdminKeys()
+  }
+
+  async function revokeAdminKey(id) {
+    await fetch(`/api/admin/keys/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ isActive: false })
+    })
+    fetchAdminKeys()
+  }
+
   // ─── API HELPERS ─────────────────────────────────────────────────────────
 
   async function apiCall(url, body, setter, loadSetter) {
+    const token = getAuthToken()
+    if (!token) { setError('Please sign in or enter an API key to use DebateOS.'); return }
     loadSetter(true)
     setError(null)
     setter(null)
     try {
-      const res = await fetch(url, {
+      // BYOK: route directly to Anthropic if using sk-ant- key
+      let res
+      if (isAnthropicKey) {
+        const sysPrompt = 'You are a world-class APDA parliamentary debate coach. Return valid JSON only, no markdown.'
+        const userPrompt = JSON.stringify(body)
+        res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': token,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 8000,
+            messages: [{ role: 'user', content: sysPrompt + '\n\nGenerate for: ' + userPrompt }],
+          })
+        })
+        const raw = await res.json()
+        if (raw.error) throw new Error(raw.error.message || 'Anthropic API error')
+        const text = raw.content?.[0]?.text || '{}'
+        let data
+        try {
+          const jsonMatch = text.match(/\{[\s\S]*\}/)
+          data = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text)
+        } catch { throw new Error('Failed to parse AI response as JSON') }
+        setter(data)
+        return
+      }
+      res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(body)
       })
       const text = await res.text()
       let data
       try { data = JSON.parse(text) } catch { throw new Error('Server returned an invalid response. The AI may be overloaded — try again in a moment.') }
+      if (res.status === 401) throw new Error(data.error || 'Invalid API key or session expired. Please check your credentials.')
+      if (res.status === 429) throw new Error(data.error || `Daily limit reached (${data.limit} requests/day). ${data.upgradeUrl ? 'Upgrade to Pro for more.' : 'Contact your team admin.'}`)
       if (!res.ok) throw new Error(data.error || 'Request failed')
       setter(data)
     } catch (e) { setError(e.message) }
     finally { loadSetter(false) }
   }
 
-  function generate() { setActiveTab('case'); setCaseFeedback({}); setOverallFeedback(''); apiCall('/api/generate', { motion: motion.trim(), format, side, background: caseBackground.trim() || undefined }, setCaseResult, setLoading) }
-  function generateBlock() { const opp = side === 'Government' ? 'Opposition' : 'Government'; setActiveTab('block'); apiCall('/api/generate', { motion: motion.trim(), format, side: opp, background: caseBackground.trim() || undefined }, setBlockResult, setBlockLoading) }
+  function generate() { setActiveTab('case'); setCaseFeedback({}); setOverallFeedback(''); apiCall('/api/generate', { motion: motion.trim(), format, side, background: caseBackground.trim() || undefined, complexity }, setCaseResult, setLoading) }
+  function generateBlock() { const opp = side === 'Government' ? 'Opposition' : 'Government'; setActiveTab('block'); apiCall('/api/generate', { motion: motion.trim(), format, side: opp, background: caseBackground.trim() || undefined, complexity }, setBlockResult, setBlockLoading) }
   function refineCase() {
     const currentResult = activeTab === 'case' ? caseResult : blockResult
     const currentSide = activeTab === 'case' ? side : (side === 'Government' ? 'Opposition' : 'Government')
@@ -355,11 +533,13 @@ export default function App() {
   }
 
   async function getSpeechFeedback(speaker) {
+    const token = getAuthToken()
+    if (!token) { setError('Please sign in or enter an API key.'); return }
     setFeedbackLoading(speaker)
     try {
       const res = await fetch('/api/speech-feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           speaker,
           notes: judgeNotes[speaker] || '',
@@ -382,6 +562,8 @@ export default function App() {
     { id: 'casual', label: 'Casual' },
     { id: 'philosophy', label: 'Philosophy' },
     { id: 'judge', label: 'Judge' },
+    { id: 'mindmap', label: 'Argument Map' },
+    ...(adminToken ? [{ id: 'admin', label: 'Admin' }] : []),
   ]
 
   // ─── RENDER ──────────────────────────────────────────────────────────────
@@ -392,6 +574,16 @@ export default function App() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body { margin: 0; background-color: #151520; background-image: ${bgImage}; color: #e0e0e6; font-family: ${FONT.sans}; -webkit-font-smoothing: antialiased; }
         ::selection { background: ${colors.primary}40; }
+        ${theme === 'light' ? `
+          body { background-color: #f0f4ff !important; background-image: none !important; color: #1e293b !important; }
+          .page-nav button { color: #64748b !important; }
+          [class*="panel"], [style*="1a1a28"] { background: #ffffff !important; border-color: #d1d9e6 !important; }
+          textarea, select { background: #f8fafc !important; border-color: #d1d9e6 !important; color: #1e293b !important; }
+          textarea::placeholder { color: #94a3b8 !important; }
+          .result-section { background: #f8fafc !important; border-color: #e2e8f0 !important; }
+          h1, h2, h3, h4, p, span, label, div { color: inherit; }
+          input[type="range"] { accent-color: ${colors.primary}; }
+        ` : ''}
         .page-nav button:hover:not([style*="boxShadow"]) { background: #1a1a2810; color: #888899 !important; }
         textarea:focus, select:focus { outline: none; border-color: ${colors.primary} !important; }
         @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
@@ -418,7 +610,54 @@ export default function App() {
       <header style={S.header}>
         <h1 style={S.logo}><span style={{ color: colors.primary }}>Debate</span>OS</h1>
         <p style={S.subtitle}>AI-powered debate toolkit</p>
+        <button onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next) }} style={{ position: 'absolute', top: 12, right: 20, padding: '4px 12px', fontSize: 10, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', background: theme === 'light' ? '#3b82f620' : '#f59e0b20', color: theme === 'light' ? '#3b82f6' : '#f59e0b', border: '1px solid ' + (theme === 'light' ? '#3b82f640' : '#f59e0b40'), borderRadius: 6, cursor: 'pointer', fontFamily: 'IBM Plex Mono, monospace' }}>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</button>
       </header>
+
+      {/* ── AUTH BAR ─────────────────────────────────────────────── */}
+      <div style={{ maxWidth: 780, margin: '0 auto 0', padding: '0 16px', width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#12121a', border: '1px solid #1e1e2e', borderRadius: 10, fontSize: 13 }}>
+          {user ? (
+            <>
+              <span style={{ color: '#666', fontSize: 11 }}>Signed in as</span>
+              <span style={{ color: colors.primary, fontWeight: 600 }}>{user.email}</span>
+              <span style={{ flex: 1 }} />
+              {userProfile?.plan === 'pro' ? (
+                <span onClick={handleManageBilling} style={{ fontSize: 11, color: '#6ee7b7', background: '#6ee7b720', padding: '2px 8px', borderRadius: 6, cursor: 'pointer' }}>PRO</span>
+              ) : (
+                <button onClick={handleUpgrade} style={{ fontSize: 11, color: '#fbbf24', background: '#fbbf2415', border: '1px solid #fbbf2430', padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontFamily: FONT.mono }}>Upgrade to Pro</button>
+              )}
+              <button onClick={signOut} style={{ fontSize: 11, color: '#666', background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT.sans }}>Sign Out</button>
+            </>
+          ) : apiKey && authMode === 'apikey' ? (
+            <>
+              <span style={{ color: '#666', fontSize: 11 }}>API Key:</span>
+              <span style={{ color: colors.primary, fontFamily: FONT.mono, fontSize: 12 }}>{apiKey.slice(0, 12)}...</span>
+              <span style={{ flex: 1 }} />
+              <button onClick={clearApiKey} style={{ fontSize: 11, color: '#666', background: 'none', border: 'none', cursor: 'pointer' }}>Change Key</button>
+            </>
+          ) : authView ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', padding: '4px 0' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="email" placeholder="Email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} style={{ flex: 1, padding: '6px 10px', background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: 6, color: '#e0e0e6', fontSize: 13, outline: 'none' }} />
+                <input type="password" placeholder="Password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && (authView === 'signin' ? signIn() : signUp())} style={{ flex: 1, padding: '6px 10px', background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: 6, color: '#e0e0e6', fontSize: 13, outline: 'none' }} />
+                <button onClick={authView === 'signin' ? signIn : signUp} disabled={authLoading} style={{ padding: '6px 14px', background: colors.primary, color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: authLoading ? 0.5 : 1 }}>{authLoading ? '...' : authView === 'signin' ? 'Sign In' : 'Sign Up'}</button>
+                <button onClick={() => { setAuthView(null); setAuthError(null) }} style={{ fontSize: 11, color: '#666', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              </div>
+              {authError && <span style={{ color: '#f87171', fontSize: 11 }}>{authError}</span>}
+              <span style={{ fontSize: 11, color: '#555' }}>{authView === 'signin' ? "Don't have an account?" : 'Already have an account?'}{' '}<span onClick={() => setAuthView(authView === 'signin' ? 'signup' : 'signin')} style={{ color: colors.primary, cursor: 'pointer' }}>{authView === 'signin' ? 'Sign Up' : 'Sign In'}</span></span>
+            </div>
+          ) : (
+            <>
+              <span style={{ color: '#555', fontSize: 12 }}>Get started:</span>
+              <button onClick={() => setAuthView('signin')} style={{ padding: '4px 12px', background: `${colors.primary}20`, color: colors.primary, border: `1px solid ${colors.primary}30`, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Sign In</button>
+              <button onClick={() => setAuthView('signup')} style={{ padding: '4px 12px', background: 'none', color: '#888', border: '1px solid #2a2a3e', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>Sign Up</button>
+              <span style={{ color: '#333', fontSize: 11 }}>or</span>
+              <input type="text" placeholder="Paste API key (dbt_... or sk-ant-...)" value={apiKey} onChange={e => setApiKey(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveApiKey()} style={{ flex: 1, padding: '5px 10px', background: '#1a1a2e', border: '1px solid #2a2a3e', borderRadius: 6, color: '#e0e0e6', fontSize: 12, fontFamily: FONT.mono, outline: 'none' }} />
+              <button onClick={saveApiKey} disabled={!apiKey.trim()} style={{ padding: '4px 10px', background: apiKey.trim() ? colors.primary : '#333', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, cursor: apiKey.trim() ? 'pointer' : 'default', opacity: apiKey.trim() ? 1 : 0.4 }}>Save</button>
+            </>
+          )}
+        </div>
+      </div>
 
       <nav className="page-nav" style={S.pageNav}>
         {PAGES.map(p => (
@@ -437,8 +676,21 @@ export default function App() {
             <div style={S.panel}>
               <label style={S.label}>Motion</label>
               <textarea style={S.textarea} rows={3} placeholder="This house would ban private education..." value={motion} onChange={e => setMotion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) generate() }} />
-              <label style={S.label}>Background <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#444' }}>(optional)</span></label>
-              <textarea style={{ ...S.textarea, fontSize: 13 }} rows={2} placeholder="Add context, constraints, actor details, or scenario setup..." value={caseBackground} onChange={e => setCaseBackground(e.target.value)} />
+              <label style={S.label}>Background <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#444' }}>(optional — philosophical motions often work best without one)</span></label>
+              <textarea style={{ ...S.textarea, fontSize: 13 }} rows={2} placeholder="Actor details, scenario constraints, or specific context. Leave blank for abstract/philosophical motions — the AI will just run with the motion structure." value={caseBackground} onChange={e => setCaseBackground(e.target.value)} />
+              <div>
+                <label style={S.label}>Complexity <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#555' }}>{['', 'Skeleton', 'Quick', 'Standard', 'Deep', 'Competition'][complexity]}</span></label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 11, color: '#555', fontFamily: FONT.mono, minWidth: 20 }}>1</span>
+                  <input type="range" min={1} max={5} step={1} value={complexity} onChange={e => setComplexity(Number(e.target.value))} style={{ flex: 1, accentColor: colors.primary, cursor: 'pointer' }} />
+                  <span style={{ fontSize: 11, color: '#555', fontFamily: FONT.mono, minWidth: 20, textAlign: 'right' }}>5</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  {['Skeleton', 'Quick', 'Standard', 'Deep', 'Competition'].map((label, i) => (
+                    <span key={label} style={{ fontSize: 10, color: complexity === i + 1 ? colors.primary : '#333', fontFamily: FONT.mono, cursor: 'pointer', transition: 'color 0.15s' }} onClick={() => setComplexity(i + 1)}>{label}</span>
+                  ))}
+                </div>
+              </div>
               <div style={S.row}>
                 <Field label="Format"><select style={S.select} value={format} onChange={e => setFormat(e.target.value)}>{FORMATS.map(f => <option key={f}>{f}</option>)}</select></Field>
                 <Field label="Side"><select style={S.select} value={side} onChange={e => setSide(e.target.value)}>{SIDES.map(s => <option key={s}>{s}</option>)}</select></Field>
@@ -741,6 +993,56 @@ export default function App() {
             )}
           </>
         )}
+        {/* ── ADMIN ────────────────────────────────────────────── */}
+        {page === 'admin' && adminToken && (
+          <>
+            <div style={S.panel}>
+              <h2 style={{ color: colors.primary, fontFamily: FONT.mono, fontSize: 16, marginBottom: 16 }}>Team API Keys</h2>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                <input type="text" placeholder="Team name" value={adminNewTeam} onChange={e => setAdminNewTeam(e.target.value)} style={{ ...S.textarea, flex: 1, minWidth: 140, padding: '8px 10px', fontSize: 13 }} />
+                <input type="email" placeholder="Coach email" value={adminNewEmail} onChange={e => setAdminNewEmail(e.target.value)} style={{ ...S.textarea, flex: 1, minWidth: 180, padding: '8px 10px', fontSize: 13 }} />
+                <input type="number" placeholder="Daily limit" value={adminNewLimit} onChange={e => setAdminNewLimit(Number(e.target.value))} style={{ ...S.textarea, width: 90, padding: '8px 10px', fontSize: 13 }} />
+                <button onClick={createAdminKey} style={{ padding: '8px 16px', background: colors.primary, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Create Key</button>
+              </div>
+              <button onClick={fetchAdminKeys} style={{ padding: '6px 14px', background: '#1a1a2e', color: '#888', border: '1px solid #2a2a3e', borderRadius: 6, fontSize: 12, cursor: 'pointer', marginBottom: 12 }}>Refresh</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {adminKeys.map(k => (
+                  <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: 8, fontSize: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, color: k.is_active ? '#e0e0e6' : '#555', minWidth: 120 }}>{k.team_name}</span>
+                    <span style={{ color: '#555', fontSize: 11 }}>{k.coach_email}</span>
+                    <span style={{ fontFamily: FONT.mono, fontSize: 10, color: '#444', cursor: 'pointer' }} onClick={() => { navigator.clipboard.writeText(k.key); }}>{k.key.slice(0, 16)}... (click to copy)</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontFamily: FONT.mono, color: colors.primary, fontSize: 11 }}>{k.todayUsage || 0}/{k.daily_limit}</span>
+                    <span style={{ fontFamily: FONT.mono, color: '#555', fontSize: 10 }}>total: {k.totalUsage || 0}</span>
+                    {k.is_active ? (
+                      <button onClick={() => revokeAdminKey(k.id)} style={{ padding: '3px 8px', background: '#f8717120', color: '#f87171', border: '1px solid #f8717140', borderRadius: 4, fontSize: 10, cursor: 'pointer' }}>Revoke</button>
+                    ) : (
+                      <span style={{ fontSize: 10, color: '#f87171' }}>Revoked</span>
+                    )}
+                  </div>
+                ))}
+                {adminKeys.length === 0 && <p style={{ color: '#555', fontSize: 12, textAlign: 'center', padding: 20 }}>No keys yet. Create one above, then click Refresh.</p>}
+              </div>
+            </div>
+          </>
+        )}
+        {/* ARGUMENT MAP */}
+        {page === 'mindmap' && (
+          <>
+            {(caseResult || blockResult) ? (
+              <MindMap
+                result={activeTab === 'case' ? caseResult : blockResult}
+                motion={motion}
+                colors={colors}
+              />
+            ) : (
+              <div style={S.panel}>
+                <p style={{ fontSize: 15, color: '#6b6b80', textAlign: 'center', lineHeight: 1.6, padding: 24 }}>Generate a case first, then come here to see it as an interactive argument map.</p>
+                <button style={{ ...S.button, background: colors.primary, color: '#fff', border: 'none', maxWidth: 240, alignSelf: 'center' }} onClick={() => setPage('generator')}>Go to Case Generator</button>
+              </div>
+            )}
+          </>
+        )}
       </main>
     </div>
   )
@@ -855,6 +1157,7 @@ function CaseDisplay({ result, sideName, formatName, isBlock, colors, setPage })
         <div style={S.crossTabLinks}>
           <button style={{ ...S.crossTabBtn, color: colors.argument, borderColor: `${colors.argument}40` }} onClick={() => setPage('speeches')}>Map This Round →</button>
           <button style={{ ...S.crossTabBtn, color: colors.turn, borderColor: `${colors.turn}40` }} onClick={() => setPage('judge')}>Practice Judging →</button>
+          <button style={{ ...S.crossTabBtn, color: colors.accent, borderColor: `${colors.accent}40` }} onClick={() => setPage('mindmap')}>Argument Map →</button>
         </div>
       )}
     </div>
@@ -899,7 +1202,7 @@ function CasualSide({ data, color, label }) {
 
 const S = {
   root: { minHeight: '100vh', maxWidth: 1080, margin: '0 auto', padding: '40px 20px 80px' },
-  header: { marginBottom: 20, textAlign: 'center' },
+  header: { marginBottom: 20, textAlign: 'center', position: 'relative' },
   logo: { fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', color: '#e0e0e6', fontFamily: FONT.sans },
   subtitle: { fontSize: 13, color: '#6b6b80', marginTop: 2, fontWeight: 400 },
   pageNav: { display: 'flex', justifyContent: 'center', gap: 4, marginBottom: 28, flexWrap: 'wrap' },

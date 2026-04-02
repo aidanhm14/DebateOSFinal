@@ -10,11 +10,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@supabase/supabase-js": "^2.101.1",
     "cors": "^2.8.5",
+    "d3": "^7.9.0",
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "stripe": "^21.0.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
