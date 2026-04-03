@@ -215,6 +215,7 @@ export default function App() {
   const [side, setSide] = useState('Government')
   const [complexity, setComplexity] = useState(3) // 1-5 scale
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('debateos-theme') || 'dark' } catch { return 'dark' } })
+  const cycleTheme = () => { const order = ['dark', 'light', 'daytime']; const next = order[(order.indexOf(theme) + 1) % 3]; setTheme(next); try { localStorage.setItem('debateos-theme', next) } catch {} }
 
   // Case Generator state
   const [caseResult, setCaseResult] = useState(null)
@@ -584,6 +585,17 @@ export default function App() {
           h1, h2, h3, h4, p, span, label, div { color: inherit; }
           input[type="range"] { accent-color: ${colors.primary}; }
         ` : ''}
+        ${theme === 'daytime' ? `
+          body { background-color: #eef4ff !important; background-image: none !important; color: #1e3a5f !important; }
+          .page-nav button { color: #5b7fa5 !important; }
+          [class*="panel"], [style*="1a1a28"] { background: #ffffff !important; border-color: #c4d9f2 !important; }
+          textarea, select { background: #f0f6ff !important; border-color: #b8d0ed !important; color: #1e3a5f !important; }
+          textarea::placeholder { color: #8baac8 !important; }
+          .result-section { background: #f5f9ff !important; border-color: #d4e4f7 !important; }
+          h1, h2, h3, h4, p, span, label, div { color: inherit; }
+          input[type="range"] { accent-color: #3b82f6; }
+          ::selection { background: #3b82f630 !important; }
+        ` : ''}
         .page-nav button:hover:not([style*="boxShadow"]) { background: #1a1a2810; color: #888899 !important; }
         textarea:focus, select:focus { outline: none; border-color: ${colors.primary} !important; }
         @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
@@ -610,7 +622,7 @@ export default function App() {
       <header style={S.header}>
         <h1 style={S.logo}><span style={{ color: colors.primary }}>Debate</span>OS</h1>
         <p style={S.subtitle}>AI-powered debate toolkit</p>
-        <button onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next) }} style={{ position: 'absolute', top: 12, right: 20, padding: '4px 12px', fontSize: 10, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', background: theme === 'light' ? '#3b82f620' : '#f59e0b20', color: theme === 'light' ? '#3b82f6' : '#f59e0b', border: '1px solid ' + (theme === 'light' ? '#3b82f640' : '#f59e0b40'), borderRadius: 6, cursor: 'pointer', fontFamily: 'IBM Plex Mono, monospace' }}>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</button>
+        <button onClick={cycleTheme} style={{ position: 'absolute', top: 12, right: 20, padding: '4px 12px', fontSize: 10, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', background: theme === 'daytime' ? '#3b82f615' : theme === 'light' ? '#64748b15' : '#f59e0b20', color: theme === 'daytime' ? '#3b82f6' : theme === 'light' ? '#64748b' : '#f59e0b', border: '1px solid ' + (theme === 'daytime' ? '#3b82f630' : theme === 'light' ? '#64748b30' : '#f59e0b40'), borderRadius: 6, cursor: 'pointer', fontFamily: 'IBM Plex Mono, monospace' }}>{{ dark: 'Light', light: 'Daytime', daytime: 'Dark' }[theme]} Mode</button>
       </header>
 
       {/* ── AUTH BAR ─────────────────────────────────────────────── */}
@@ -670,8 +682,18 @@ export default function App() {
       <main style={S.main}>
         {error && <div style={S.error}><strong>Error:</strong> {error}</div>}
 
+        {/* ── AUTH GATE ─────────────────────────────────────────────── */}
+        {!isAuthenticated && page !== 'philosophy' && (
+          <div style={{ padding: '48px 28px', background: '#1a1a28', border: '1px solid #1e1e2e', borderRadius: 14, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            <div style={{ fontSize: 32, marginBottom: 4 }}>🔑</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#e0e0e6', letterSpacing: '-0.01em' }}>API Key Required</h2>
+            <p style={{ fontSize: 14, color: '#6b6b80', lineHeight: 1.6, maxWidth: 420 }}>Sign in or enter an API key above to use DebateOS features. You can use a team key (dbt_...) or your own Anthropic key (sk-ant-...).</p>
+            <p style={{ fontSize: 12, color: '#444', marginTop: 4 }}>The Philosophy section is free to browse.</p>
+          </div>
+        )}
+
         {/* ── CASE GENERATOR ───────────────────────────────────────── */}
-        {page === 'generator' && (
+        {page === 'generator' && isAuthenticated && (
           <>
             <div style={S.panel}>
               <label style={S.label}>Motion</label>
@@ -743,7 +765,7 @@ export default function App() {
         )}
 
         {/* ── RESOLUTION GENERATOR ─────────────────────────────────── */}
-        {page === 'resolutions' && (
+        {page === 'resolutions' && isAuthenticated && (
           <>
             <div style={{ ...S.panel, alignItems: 'center', padding: 36 }}>
               <p style={{ fontSize: 15, color: '#6b6b80', textAlign: 'center', marginBottom: 12 }}>Generate random debate motions, resolutions, and case prompts.</p>
@@ -795,7 +817,7 @@ export default function App() {
         )}
 
         {/* ── SPEECH STRUCTURES ─────────────────────────────────────── */}
-        {page === 'speeches' && (
+        {page === 'speeches' && isAuthenticated && (
           <>
             <div style={S.panel}>
               <p style={{ fontSize: 14, color: '#6b6b80', marginBottom: 8, lineHeight: 1.6 }}>
@@ -836,7 +858,7 @@ export default function App() {
         )}
 
         {/* ── CASUAL DEBATE ────────────────────────────────────────── */}
-        {page === 'casual' && (
+        {page === 'casual' && isAuthenticated && (
           <>
             <div style={S.panel}>
               <label style={S.label}>Topic</label>
@@ -891,7 +913,7 @@ export default function App() {
         )}
 
         {/* ── JUDGE ────────────────────────────────────────────────── */}
-        {page === 'judge' && (
+        {page === 'judge' && isAuthenticated && (
           <>
             <div style={S.panel}>
               <Field label="Format">
@@ -994,7 +1016,7 @@ export default function App() {
           </>
         )}
         {/* ── ADMIN ────────────────────────────────────────────── */}
-        {page === 'admin' && adminToken && (
+        {page === 'admin' && isAuthenticated && adminToken && (
           <>
             <div style={S.panel}>
               <h2 style={{ color: colors.primary, fontFamily: FONT.mono, fontSize: 16, marginBottom: 16 }}>Team API Keys</h2>
@@ -1027,7 +1049,7 @@ export default function App() {
           </>
         )}
         {/* ARGUMENT MAP */}
-        {page === 'mindmap' && (
+        {page === 'mindmap' && isAuthenticated && (
           <>
             {(caseResult || blockResult) ? (
               <MindMap

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { withAuth } from './_middleware.js';
 
 let client;
 function getClient() {
@@ -58,7 +59,7 @@ You MUST respond in the following JSON format exactly:
 
 Return ONLY valid JSON. No markdown, no code fences, no extra text. Generate 3-4 points per side.`;
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const { topic, setting, groupSize, vibe, category } = req.body;
   if (!topic) return res.status(400).json({ error: 'Missing topic' });
@@ -78,6 +79,7 @@ export default async function handler(req, res) {
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Generate a casual debate brief for both sides of this topic:\n\n"${topic}"${context}\n\nIMPORTANT: Match the vibe and setting exactly. Every talking point should sound like something a real person would actually say in this specific setting. If the vibe is comedic, be genuinely funny. If heated, be genuinely provocative. If intellectual, cite real ideas.` }]
     });
+    req._usage = { input_tokens: message.usage?.input_tokens || 0, output_tokens: message.usage?.output_tokens || 0 };
     const text = message.content[0].text;
     let parsed;
     try { parsed = JSON.parse(text); } catch { return res.status(500).json({ error: 'AI returned invalid JSON. Please try again.' }); }
@@ -87,3 +89,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: err.message || 'Unknown error' });
   }
 }
+
+export default withAuth(handler);

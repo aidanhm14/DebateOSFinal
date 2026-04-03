@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { withAuth } from './_middleware.js';
 
 let client;
 function getClient() {
@@ -67,7 +68,7 @@ You MUST respond in the following JSON format exactly:
 
 Return ONLY valid JSON. No markdown, no code fences, no extra text. Return exactly 6 resolutions. Ensure a mix of at least 2 vague and 2 background motions, with diverse categories and difficulties.`;
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const { topics } = req.body || {};
   const topicStr = topics && topics.length ? `\nFocus on these areas: ${topics.join(', ')}` : '\nMix categories freely.';
@@ -80,6 +81,7 @@ export default async function handler(req, res) {
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Generate 6 random debate resolutions. Mix difficulties and styles. Every motion must pass your quality checks: both sides genuinely winnable, rewards deep analysis, has a non-obvious angle.${topicStr}` }]
     });
+    req._usage = { input_tokens: message.usage?.input_tokens || 0, output_tokens: message.usage?.output_tokens || 0 };
     const text = message.content[0].text;
     let parsed;
     try { parsed = JSON.parse(text); } catch { return res.status(500).json({ error: 'AI returned invalid JSON. Please try again.' }); }
@@ -89,3 +91,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: err.message || 'Unknown error' });
   }
 }
+
+export default withAuth(handler);

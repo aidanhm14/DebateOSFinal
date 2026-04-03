@@ -1,5 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { withAuth } from './_middleware.js';
 
 let client;
 function getClient() {
@@ -52,21 +51,21 @@ DEPTH REQUIREMENTS:
 
 EXAMPLES OF THE QUALITY I EXPECT (drawn from real winning APDA cases):
 
-=== EXAMPLE 1: ACTOR-ANALYSIS CASE (NK Denuclearization, Opp) ===
+=== EXAMPLE 1: ACTOR-ANALYSIS CASE (NK Denuclearization â Opp) ===
 
 Argument Label: "Argument 1: Leverage"
 Claim: "Denuclearizing means throwing away Kim's best tool in international negotiations."
 Warrant: "The rest of the world fears the completion of North Korea's nuclear weapons for three reasons. Kim has vowed to make intentional attacks against America, South Korea, and Western Europe, which could lead to millions of casualties. North Korea could miscalculate: even if Kim will not intentionally start a nuclear war, he could easily overreact or misinterpret the actions of other countries. For example, if joint naval training drills get too close to the Northern border, Kim could misread the situation and strike preemptively. And Kim could sell nuclear weapons on the black market to countries like Iran, Myanmar, and Syria, or terrorist organizations like ISIS. The incentive for North Korea to do this is significant, because it is a desperately poor nation under embargo. As such, America and its allies will do anything short of outright military intervention to slow or reverse North Korea's weapons program. Kim Jong Un knows this, and uses his nuclear arsenal as a strategic bargaining chip in negotiations. These negotiations, which are transactional in nature, benefit the Kim Regime by providing foreign aid. One of North Korea's major demands is the provision of humanitarian aid, usually in the form of food, fuel, or raw materials. Whenever North Korea enters an economic downturn, has a bad harvest, or needs more resources for domestic programs, it can easily agree to freeze its weapons programs in exchange for aid. This foreign assistance props up the Kim regime and allows it to survive without providing social services for its people. This is an effective strategy because America's economy is hundreds of times larger than North Korea's, so sending aid is a proportionally insignificant expenditure for the West."
 Impact: "Even if opposition proves the deal offers security guarantees, those guarantees are unenforceable. There is no higher authority with the ability to punish non-compliance, and international agreements are usually written with vague and non-committal language, escape clauses, and other reservations that allow parties to ignore their obligations. This is how America breaks international law and gets away with it all the time. The leverage from nuclear weapons is the only thing that reliably produces material benefits for the regime. Giving that up is irreversible: you cannot rebuild a nuclear program after dismantling it under IAEA inspection. Weigh irreversibility against any speculative benefit."
 
-=== EXAMPLE 2: BACKGROUND CASE (BNPL/Burrito Bubble, Gov) ===
+=== EXAMPLE 2: BACKGROUND CASE (BNPL/Burrito Bubble â Gov) ===
 
 Argument Label: "Argument 2: Collateralized Debt Obligations"
 Claim: "Buy now pay later programs do not just harm individual consumers. They create systemic financial risk by generating a new class of unregulated asset-backed securities."
 Warrant: "Companies like Klarna do not hold this debt on their own. They are relatively small and new, lacking the capital resources major banks have to withstand potential default spikes, enforce their own collections program, or hold billions of dollars in debt at once. Like credit cards, BNPL firms work with asset managers and investment bankers to package this debt into securities which are sold on the broader market, taking a small loss on their margin in favor of a guarantee that their debt is repaid. These securities make up a significant portion of our pensions, college admission funds, and bank investment portfolios. Three warrants for why this is dangerous. First, they are viewed as comparatively safer to other investments: they promise quicker returns compared to securities backed by mortgages or car loans and the risk of default is aggregated among millions of consumers. This aggregation is typically done via tranching, where a thousand individual loans are packaged together and only the top 800 are sold as top-rated securities. Over 200 people would have to default on their loans in order for them to fail, what appears to rating agencies as a statistical impossibility. But here is the critical analysis: BNPL programs worsen economic shocks by creating large-scale correlated risk. When big economic events like recessions or technological improvements create macroeconomic shocks, mass layoffs or lower wages means lots of people default at once. This collapses the value of existing BNPL securities creating a feedback loop of defaults. It is 2008 mortgage backed securities all over again. Each BNPL-backed security is perceived as safe but incredibly correlated with the overall market. This means that it is actually incredibly likely for 200 people to default, but standard statistical methods fail to catch it. Fourth, there are structural reasons all assets are rated to be more secure than they are: rating agencies are insulated from the downside harms of too lenient rating, and employees at these rating agencies make low salaries compared to private credit or hedge funds. This means their primary role is analyzing statistical models created by the people trying to get their assets rated, but that they are massively underqualified to do so."
 Impact: "This outweighs anything on the opposition side on magnitude and probability. We are not talking about individual consumer harm: we are talking about systemic risk to the entire financial system. When these securities fail, they do not just harm BNPL users. They harm everyone whose pension fund, college savings, or bank holds these assets. The market demands a higher premium to accommodate increasing risk from comparatively riskier BNPL debt, and credit companies must pass that onto their consumers, further exacerbating rates for users who will never touch Klarna."
 
-=== EXAMPLE 3: POP CULTURE CASE (Harry Potter Wizarding Secrecy, Opp) ===
+=== EXAMPLE 3: POP CULTURE CASE (Harry Potter Wizarding Secrecy â Opp) ===
 
 Argument Label: "Argument 1: Consent Violations"
 Claim: "The secret wizarding society is built on consent violations by the state upon its members. Autonomy is the preeminent value in this round."
@@ -110,42 +109,21 @@ You MUST respond in the following JSON format exactly:
 
 Return ONLY valid JSON. No markdown, no code fences, no extra text. Generate 2-3 arguments, 2-3 spikes.`;
 
-const COMPLEXITY_INSTRUCTIONS = {
-  1: `COMPLEXITY: SKELETON. Bare-bones outline. Just the motion structure, key claims, and a sentence or two per argument. No deep warrants needed. ~400 words total. Still generate all JSON fields but keep each one short. Skip the examples and go lean.`,
-  2: `COMPLEXITY: QUICK. A lean case with core arguments and basic warrants. ~600-800 words total. Each warrant 50-80 words. Show the logic chain but do not fully develop it. Good for brainstorming or quick practice.`,
-  3: `COMPLEXITY: STANDARD. A solid complete case with real warrants and examples. ~1000-1200 words total. Each warrant 100-200 words with at least one empirical example. The default for most prep.`,
-  4: `COMPLEXITY: DEEP. Layered warrants, multiple empirical examples per argument, pre-empts baked in. ~1500-1800 words total. Each warrant 200-300 words with 2+ examples and sub-warrants.`,
-  5: `COMPLEXITY: COMPETITION. Full tournament prep. Deep warrants with 3+ layers, extensive examples, cross-applied weighing, devastating turns and spikes. ~2000+ words total. Each warrant 300-400+ words. Use the full depth from the case architecture above.`,
-};
-
-async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  const { motion, format, side, background, complexity } = req.body;
+  const { motion, format, side, background } = req.body;
   if (!motion || !format || !side) return res.status(400).json({ error: 'Missing required fields' });
 
-  const level = Math.max(1, Math.min(5, complexity || 3));
-  const complexityStr = `\n\n${COMPLEXITY_INSTRUCTIONS[level]}`;
-
-  // Detect philosophical/abstract motions without specific actors
-  const motionLower = motion.toLowerCase();
-  const hasActors = /\b(as |united states|china|eu |uk |india|government of|president|congress|un |nato|company|corporation|minister|secretary|council)\b/i.test(motionLower);
-
-  let bgStr = '';
-  if (background && background.trim()) {
-    bgStr = `\n\nBackground/Context provided by the user (your case MUST directly engage with these specific actors, constraints, and scenarios. Tailor your mechanism to this situation, do not be generic):\n${background}`;
-  } else if (!hasActors) {
-    bgStr = `\n\nNo background provided and this motion has no specific actors. Do NOT invent actors, countries, or detailed scenarios that are not in the motion. Build the case around principles, frameworks, and philosophical reasoning. Use real-world examples to illustrate your points, but keep the core arguments principled rather than contingent on a specific scenario you made up.`;
-  }
+  const bgStr = background ? `\n\nBackground/Context provided by the user (your case MUST directly engage with these specific actors, constraints, and scenarios â tailor your mechanism to this situation, do not be generic):\n${background}` : '';
 
   try {
     const anthropic = getClient();
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: level <= 2 ? 4096 : 8192,
-      system: SYSTEM_PROMPT + complexityStr,
+      max_tokens: 8192,
+      system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Generate a ${side} case for the following motion in ${format} format:\n\n"${motion}"${bgStr}` }]
     });
-    req._usage = { input_tokens: message.usage?.input_tokens || 0, output_tokens: message.usage?.output_tokens || 0 };
     const text = message.content[0].text;
     let parsed;
     try { parsed = JSON.parse(text); } catch { return res.status(500).json({ error: 'AI returned invalid JSON. Please try again.' }); }
@@ -155,5 +133,3 @@ async function handler(req, res) {
     res.status(500).json({ error: err.message || 'Unknown error' });
   }
 }
-
-export default withAuth(handler);

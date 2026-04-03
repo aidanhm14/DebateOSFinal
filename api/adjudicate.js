@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { withAuth } from './_middleware.js';
 
 let client;
 function getClient() {
@@ -52,7 +53,7 @@ You MUST respond in the following JSON format exactly:
 
 Return ONLY valid JSON. No markdown, no code fences, no extra text.`;
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const { format, speeches } = req.body;
   if (!speeches || !speeches.length) return res.status(400).json({ error: 'Missing speech notes' });
@@ -70,6 +71,7 @@ export default async function handler(req, res) {
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Format: ${format}\n\nSpeech notes:\n\n${speechSummary}\n\nFollow your judging methodology step by step. Identify arguments, track them through the round, map clashes, determine winners, weigh, then decide. Show your work in the reasoning.` }]
     });
+    req._usage = { input_tokens: message.usage?.input_tokens || 0, output_tokens: message.usage?.output_tokens || 0 };
     const text = message.content[0].text;
     let parsed;
     try { parsed = JSON.parse(text); } catch { return res.status(500).json({ error: 'AI returned invalid JSON. Please try again.' }); }
@@ -79,3 +81,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: err.message || 'Unknown error' });
   }
 }
+
+export default withAuth(handler);

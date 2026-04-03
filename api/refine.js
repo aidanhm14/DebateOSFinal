@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { withAuth } from './_middleware.js';
 
 let client;
 function getClient() {
@@ -45,7 +46,7 @@ The JSON structure must be:
 
 Return ONLY valid JSON. No markdown, no code fences, no extra text.`;
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const { motion, format, side, currentCase, feedback } = req.body;
   if (!currentCase || !feedback) return res.status(400).json({ error: 'Missing case or feedback' });
@@ -60,6 +61,7 @@ export default async function handler(req, res) {
         { role: 'user', content: `Original motion: "${motion}" (${format}, ${side})\n\nCurrent case:\n${JSON.stringify(currentCase)}\n\nFeedback to incorporate:\n${feedback}\n\nIMPORTANT: Make SUBSTANTIVE improvements, not cosmetic ones. Add new examples, new sub-warrants, new logical layers. The refined version must be noticeably better. If the feedback targets specific sections, focus your improvements there.` }
       ]
     });
+    req._usage = { input_tokens: message.usage?.input_tokens || 0, output_tokens: message.usage?.output_tokens || 0 };
     const text = message.content[0].text;
     let parsed;
     try { parsed = JSON.parse(text); } catch { return res.status(500).json({ error: 'AI returned invalid JSON. Please try again.' }); }
@@ -69,3 +71,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: err.message || 'Unknown error' });
   }
 }
+
+export default withAuth(handler);
